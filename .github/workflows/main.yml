@@ -1,0 +1,75 @@
+
+name: Build ZAY KEYS Installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'ZAY_KEYS_Installer/**'
+      - '.github/workflows/build-installer.yml'
+
+jobs:
+  build-installer:
+    name: Compile Windows Installer
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --yes --no-progress
+
+      - name: Verify plugin files
+        shell: pwsh
+        run: |
+          $plugin = "ZAY_KEYS_Installer/payload/ZAY KEYS.vst3/Contents/x86_64-win/ZAY KEYS.vst3"
+
+          if (!(Test-Path $plugin)) {
+            throw "ZAY KEYS VST3 binary not found!"
+          }
+
+          if ((Get-Item $plugin).Length -lt 100000) {
+            throw "Plugin binary is invalid or incomplete!"
+          }
+
+          Write-Host "ZAY KEYS VST3 verified!"
+
+      - name: Compile Installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          $script = "ZAY_KEYS_Installer/installer/ZayKeysInstaller.iss"
+
+          if (!(Test-Path $script)) {
+            throw "Installer script not found!"
+          }
+
+          & $iscc "/Qp" $script
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Installer compilation failed!"
+          }
+
+      - name: Verify EXE
+        shell: pwsh
+        run: |
+          $exe = "ZAY_KEYS_Installer/output/ZAY_KEYS_Installer_v1.0.1_Windows.exe"
+
+          if (!(Test-Path $exe)) {
+            throw "Installer EXE was not generated!"
+          }
+
+          Write-Host "Installer successfully generated!"
+
+      - name: Upload Installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZAY-KEYS-INSTALLER-WINDOWS
+          path: ZAY_KEYS_Installer/output/ZAY_KEYS_Installer_v1.0.1_Windows.exe
+          if-no-files-found: error
+          retention-days: 30
