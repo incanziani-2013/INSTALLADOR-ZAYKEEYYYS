@@ -1,8 +1,9 @@
 
-name: Build ZAY KEYS Installer
+name: ZAY KEYS - Windows Installer
 
 on:
   workflow_dispatch:
+
   push:
     branches:
       - main
@@ -12,32 +13,69 @@ on:
 
 jobs:
   build-installer:
-    name: Compile Windows Installer
+    name: Build ZAY KEYS Installer
     runs-on: windows-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
+
+      - name: Find ZAY KEYS VST3
+        shell: pwsh
+        run: |
+          Write-Host "Buscando ZAY KEYS VST3..."
+
+          $bundles = Get-ChildItem -Path . -Directory -Filter "*.vst3" -Recurse -Force |
+            Where-Object {
+              $_.FullName -notlike "*\ZAY_KEYS_Installer\payload\*" -and
+              (Test-Path (Join-Path $_.FullName "Contents/x86_64-win"))
+            }
+
+          if (!$bundles) {
+            Write-Host "No se encontró ningún bundle VST3."
+            Write-Host "Directorios disponibles:"
+            Get-ChildItem -Path . -Directory -Recurse |
+              Select-Object -First 100 -ExpandProperty FullName
+
+            throw "ZAY KEYS VST3 no encontrado."
+          }
+
+          $source = $bundles | Select-Object -First 1
+
+          Write-Host "Plugin encontrado:"
+          Write-Host $source.FullName
+
+          $destination = Join-Path $PWD "ZAY_KEYS_Installer/payload/ZAY KEYS.vst3"
+
+          New-Item -ItemType Directory -Force -Path (Split-Path $destination) | Out-Null
+
+          if (Test-Path $destination) {
+            Remove-Item $destination -Recurse -Force
+          }
+
+          Copy-Item $source.FullName $destination -Recurse -Force
+
+          $binaryFolder = Join-Path $destination "Contents/x86_64-win"
+
+          $binary = Get-ChildItem -Path $binaryFolder -File |
+            Select-Object -First 1
+
+          if (!$binary) {
+            throw "No se encontró el binario de Windows dentro del bundle."
+          }
+
+          if ($binary.Length -lt 100000) {
+            throw "El binario parece incompleto."
+          }
+
+          Write-Host "VST3 preparado correctamente."
+          Write-Host "Binario: $($binary.FullName)"
+          Write-Host "Tamaño: $($binary.Length) bytes"
 
       - name: Install Inno Setup
         shell: pwsh
         run: |
           choco install innosetup --yes --no-progress
-
-      - name: Verify plugin files
-        shell: pwsh
-        run: |
-          $plugin = "ZAY_KEYS_Installer/payload/ZAY KEYS.vst3/Contents/x86_64-win/ZAY KEYS.vst3"
-
-          if (!(Test-Path $plugin)) {
-            throw "ZAY KEYS VST3 binary not found!"
-          }
-
-          if ((Get-Item $plugin).Length -lt 100000) {
-            throw "Plugin binary is invalid or incomplete!"
-          }
-
-          Write-Host "ZAY KEYS VST3 verified!"
 
       - name: Compile Installer
         shell: pwsh
@@ -45,28 +83,36 @@ jobs:
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           $script = "ZAY_KEYS_Installer/installer/ZayKeysInstaller.iss"
 
+          if (!(Test-Path $iscc)) {
+            throw "Inno Setup compiler not found."
+          }
+
           if (!(Test-Path $script)) {
-            throw "Installer script not found!"
+            throw "ZayKeysInstaller.iss not found."
           }
 
           & $iscc "/Qp" $script
 
           if ($LASTEXITCODE -ne 0) {
-            throw "Installer compilation failed!"
+            throw "Installer compilation failed."
           }
 
-      - name: Verify EXE
+      - name: Verify Installer
         shell: pwsh
         run: |
           $exe = "ZAY_KEYS_Installer/output/ZAY_KEYS_Installer_v1.0.1_Windows.exe"
 
           if (!(Test-Path $exe)) {
-            throw "Installer EXE was not generated!"
+            throw "Installer EXE was not generated."
           }
 
-          Write-Host "Installer successfully generated!"
+          $file = Get-Item $exe
 
-      - name: Upload Installer
+          Write-Host "INSTALLER GENERATED SUCCESSFULLY!"
+          Write-Host "File: $($file.FullName)"
+          Write-Host "Size: $($file.Length) bytes"
+
+      - name: Upload Windows Installer
         uses: actions/upload-artifact@v4
         with:
           name: ZAY-KEYS-INSTALLER-WINDOWS
